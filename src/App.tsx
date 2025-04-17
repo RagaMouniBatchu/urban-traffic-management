@@ -6,6 +6,8 @@ interface Node {
   id: string;
   x?: number;
   y?: number;
+  fx?: number;
+  fy?: number;
 }
 
 interface Edge {
@@ -95,11 +97,64 @@ const findShortestPath = (
   return { path, totalWeight: distances[endNodeId] };
 };
 
-// Generate initial nodes (50 nodes)
+// Generate initial nodes (50 nodes) in an organic layout
 const generateInitialNodes = (): Node[] => {
-  return Array.from({ length: 50 }, (_, i) => ({
-    id: `node${i + 1}`,
-  }));
+  const nodes: Node[] = [];
+  const centerX = 0;
+  const centerY = 0;
+  const radius = 300; // Maximum radius from center
+
+  // Create main hub nodes
+  const hubNodes = 5;
+  for (let i = 0; i < hubNodes; i++) {
+    const angle = (2 * Math.PI * i) / hubNodes;
+    const x = centerX + (radius * 0.4 * Math.cos(angle));
+    const y = centerY + (radius * 0.4 * Math.sin(angle));
+    nodes.push({
+      id: `node${i + 1}`,
+      x: x,
+      y: y,
+      fx: x,
+      fy: y
+    });
+  }
+
+  // Create nodes around hubs with some randomness
+  let nodeId = hubNodes + 1;
+  const hubRadii = [0.6, 0.8, 1]; // Different distance multipliers from hubs
+
+  while (nodes.length < 50) {
+    const hubIndex = Math.floor(Math.random() * hubNodes);
+    const hubNode = nodes[hubIndex];
+    const radiusMultiplier = hubRadii[Math.floor(Math.random() * hubRadii.length)];
+    const angle = Math.random() * 2 * Math.PI;
+    const distance = radius * radiusMultiplier * (0.3 + Math.random() * 0.7); // Random distance from hub
+    
+    // Add some randomness to position
+    const randomOffset = (Math.random() - 0.5) * 50;
+    const x = hubNode.x! + distance * Math.cos(angle) + randomOffset;
+    const y = hubNode.y! + distance * Math.sin(angle) + randomOffset;
+
+    // Check if position is too close to existing nodes
+    const tooClose = nodes.some(node => {
+      const dx = node.x! - x;
+      const dy = node.y! - y;
+      return Math.sqrt(dx * dx + dy * dy) < 50; // Minimum distance between nodes
+    });
+
+    if (!tooClose) {
+      nodes.push({
+        id: `node${nodeId}`,
+        x: x,
+        y: y,
+        fx: x,
+        fy: y
+      });
+      nodeId++;
+    }
+  }
+
+  return nodes;
 };
 
 // Generate random weight
@@ -107,29 +162,59 @@ const generateWeight = (): number => {
   return Math.floor(Math.random() * 10) + 1;
 };
 
-// Generate initial edges (at least 49 edges)
+// Generate initial edges with more organic connections
 const generateInitialEdges = (nodes: Node[]): Edge[] => {
   const edges: Edge[] = [];
-  
-  // First, connect all nodes in sequence to ensure connectivity
-  for (let i = 0; i < nodes.length - 1; i++) {
-    edges.push({
-      source: nodes[i],
-      target: nodes[i + 1],
-      weight: generateWeight(),
-    });
-  }
+  const addedEdges = new Set<string>();
 
-  // Add some random additional edges
-  for (let i = 0; i < 10; i++) {
-    const source = nodes[Math.floor(Math.random() * nodes.length)];
-    const target = nodes[Math.floor(Math.random() * nodes.length)];
-    if (source.id !== target.id) {
+  // Helper function to add edge if not already added
+  const tryAddEdge = (source: Node, target: Node) => {
+    const edgeKey = `${source.id}-${target.id}`;
+    const reverseEdgeKey = `${target.id}-${source.id}`;
+    
+    if (!addedEdges.has(edgeKey) && !addedEdges.has(reverseEdgeKey)) {
       edges.push({
         source,
         target,
-        weight: generateWeight(),
+        weight: generateWeight()
       });
+      addedEdges.add(edgeKey);
+      return true;
+    }
+    return false;
+  };
+
+  // Connect each node to its nearest neighbors
+  nodes.forEach((node) => {
+    // Calculate distances to all other nodes
+    const distances = nodes
+      .filter(n => n.id !== node.id)
+      .map(n => ({
+        node: n,
+        distance: Math.sqrt(
+          Math.pow((n.x! - node.x!), 2) + 
+          Math.pow((n.y! - node.y!), 2)
+        )
+      }))
+      .sort((a, b) => a.distance - b.distance);
+
+    // Connect to 2-4 nearest neighbors
+    const connectCount = 2 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < Math.min(connectCount, distances.length); i++) {
+      tryAddEdge(node, distances[i].node);
+    }
+  });
+
+  // Add some random long-distance connections (like highways)
+  const longDistanceConnections = 10;
+  for (let i = 0; i < longDistanceConnections; i++) {
+    const sourceIndex = Math.floor(Math.random() * nodes.length);
+    const targetIndex = Math.floor(Math.random() * nodes.length);
+    
+    if (sourceIndex !== targetIndex) {
+      const source = nodes[sourceIndex];
+      const target = nodes[targetIndex];
+      tryAddEdge(source, target);
     }
   }
 
@@ -142,6 +227,8 @@ function App() {
     const links = generateInitialEdges(nodes);
     return { nodes, links };
   });
+
+  const [hoveredLink, setHoveredLink] = React.useState<Edge | null>(null);
 
   const [shortestPathInfo, setShortestPathInfo] = React.useState<{
     path: string[];
@@ -184,7 +271,9 @@ function App() {
         links: prev.links.filter(link => {
           const linkSource = typeof link.source === 'object' ? link.source.id : link.source;
           const linkTarget = typeof link.target === 'object' ? link.target.id : link.target;
-          return !(linkSource === sourceNodeId && linkTarget === targetNodeId);
+          // Check both directions since it's an undirected graph
+          return !((linkSource === sourceNodeId && linkTarget === targetNodeId) ||
+                  (linkSource === targetNodeId && linkTarget === sourceNodeId));
         }),
       }));
     }
@@ -283,6 +372,7 @@ function App() {
       <ForceGraph2D
         graphData={graphData}
         nodeLabel="id"
+        linkLabel={(link) => `Weight: ${(link as Edge).weight}`}
         nodeColor={(node) => {
           if (shortestPathInfo && shortestPathInfo.path.includes(node.id)) {
             return '#2196F3';
@@ -290,6 +380,9 @@ function App() {
           return '#1f77b4';
         }}
         linkColor={(link) => {
+          if (link === hoveredLink) {
+            return '#ffd700';
+          }
           if (shortestPathInfo) {
             const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
             const targetId = typeof link.target === 'object' ? link.target.id : link.target;
@@ -302,8 +395,11 @@ function App() {
           }
           return '#555';
         }}
-        nodeRelSize={6}
+        nodeRelSize={8}
         linkWidth={(link) => {
+          if (link === hoveredLink) {
+            return 3;
+          }
           if (shortestPathInfo) {
             const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
             const targetId = typeof link.target === 'object' ? link.target.id : link.target;
@@ -312,15 +408,16 @@ function App() {
               return (nodeId === sourceId && nextNodeId === targetId) ||
                      (nodeId === targetId && nextNodeId === sourceId);
             });
-            return isInPath ? 4 : 1;
+            return isInPath ? 2 : 1;
           }
           return 1;
         }}
+        onLinkHover={setHoveredLink}
         nodeCanvasObject={(node, ctx, globalScale) => {
           const label = node.id.replace('node', '');
-          const fontSize = 12/globalScale;
+          const fontSize = 14/globalScale;
           const isInPath = shortestPathInfo && shortestPathInfo.path.includes(node.id);
-          const nodeR = isInPath ? 10 : 8; // Larger radius for path nodes
+          const nodeR = isInPath ? 12 : 10;
 
           // Draw outer glow for path nodes
           if (isInPath) {
@@ -348,6 +445,8 @@ function App() {
           const start = link.source as Node;
           const end = link.target as Node;
           
+          const isHovered = link === hoveredLink;
+          
           // Determine if this link is part of the shortest path
           const isInPath = shortestPathInfo && shortestPathInfo.path.some((nodeId, index) => {
             const nextNodeId = shortestPathInfo.path[index + 1];
@@ -355,14 +454,14 @@ function App() {
                    (nodeId === end.id && nextNodeId === start.id);
           });
 
-          // Draw the line with glow effect for path
-          if (isInPath) {
+          // Draw the line with glow effect for path or hover
+          if (isInPath || isHovered) {
             // Draw glow
             ctx.beginPath();
             ctx.moveTo(start.x!, start.y!);
             ctx.lineTo(end.x!, end.y!);
-            ctx.strokeStyle = 'rgba(76, 175, 80, 0.3)';
-            ctx.lineWidth = 8;
+            ctx.strokeStyle = isHovered ? 'rgba(255, 215, 0, 0.15)' : 'rgba(76, 175, 80, 0.15)';
+            ctx.lineWidth = 6;
             ctx.stroke();
           }
 
@@ -370,35 +469,43 @@ function App() {
           ctx.beginPath();
           ctx.moveTo(start.x!, start.y!);
           ctx.lineTo(end.x!, end.y!);
-          ctx.strokeStyle = isInPath ? '#4CAF50' : '#555';
-          ctx.lineWidth = isInPath ? 4 : 1;
+          ctx.strokeStyle = isHovered ? '#ffd700' : (isInPath ? '#4CAF50' : '#555');
+          ctx.lineWidth = isHovered ? 3 : (isInPath ? 2 : 1);
           ctx.stroke();
 
-          // Draw weight with background for better visibility
-          const middleX = (start.x! + end.x!) / 2;
-          const middleY = (start.y! + end.y!) / 2;
-          const weight = (link as Edge).weight.toString();
-          const fontSize = isInPath ? 14/globalScale : 12/globalScale;
-          ctx.font = `${isInPath ? 'bold ' : ''}${fontSize}px Sans-Serif`;
-          
-          // Add background rectangle
-          const textMetrics = ctx.measureText(weight);
-          const padding = fontSize * 0.3;
-          ctx.fillStyle = '#1a1a1a';
-          ctx.fillRect(
-            middleX - textMetrics.width/2 - padding,
-            middleY - fontSize/2 - padding/2,
-            textMetrics.width + padding * 2,
-            fontSize + padding
-          );
+          // Draw weight with background for better visibility (only if not hovered)
+          if (!isHovered) {
+            const middleX = (start.x! + end.x!) / 2;
+            const middleY = (start.y! + end.y!) / 2;
+            const weight = (link as Edge).weight.toString();
+            const fontSize = isInPath ? 14/globalScale : 12/globalScale;
+            ctx.font = `${isInPath ? 'bold ' : ''}${fontSize}px Sans-Serif`;
+            
+            // Add background rectangle
+            const textMetrics = ctx.measureText(weight);
+            const padding = fontSize * 0.4;
+            ctx.fillStyle = '#1a1a1a';
+            ctx.fillRect(
+              middleX - textMetrics.width/2 - padding,
+              middleY - fontSize/2 - padding/2,
+              textMetrics.width + padding * 2,
+              fontSize + padding
+            );
 
-          // Draw weight text
-          ctx.fillStyle = isInPath ? '#4CAF50' : '#ffd700';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(weight, middleX, middleY);
+            // Draw weight text
+            ctx.fillStyle = isInPath ? '#4CAF50' : '#ffd700';
+            ctx.fillText(weight, middleX, middleY);
+          }
         }}
-        linkCanvasObjectMode={() => 'after'}
+        linkCanvasObjectMode={() => 'replace'}
+        cooldownTicks={0}
+        warmupTicks={0}
+        enableNodeDrag={false}
+        enableZoomInteraction={true}
+        enablePanInteraction={true}
+        autoPauseRedraw={false}
+        width={window.innerWidth}
+        height={window.innerHeight}
       />
     </div>
   );
