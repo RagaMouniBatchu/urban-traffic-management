@@ -303,6 +303,51 @@ function App() {
     }
   }, [graphData]);
 
+  const handleModifyWeight = React.useCallback(() => {
+    const sourceId = prompt('Enter source node number (1-50):');
+    const targetId = prompt('Enter target node number (1-50):');
+    
+    if (sourceId && targetId) {
+      const sourceNodeId = `node${sourceId}`;
+      const targetNodeId = `node${targetId}`;
+      
+      // Find the edge
+      const edge = graphData.links.find(link => {
+        const linkSource = typeof link.source === 'object' ? link.source.id : link.source;
+        const linkTarget = typeof link.target === 'object' ? link.target.id : link.target;
+        return (linkSource === sourceNodeId && linkTarget === targetNodeId) ||
+               (linkSource === targetNodeId && linkTarget === sourceNodeId);
+      });
+
+      if (edge) {
+        const newWeight = prompt('Enter new weight (1-10):');
+        if (newWeight) {
+          const weight = parseInt(newWeight);
+          if (!isNaN(weight) && weight >= 1 && weight <= 10) {
+            setGraphData(prev => ({
+              nodes: [...prev.nodes],
+              links: prev.links.map(link => {
+                const linkSource = typeof link.source === 'object' ? link.source.id : link.source;
+                const linkTarget = typeof link.target === 'object' ? link.target.id : link.target;
+                if ((linkSource === sourceNodeId && linkTarget === targetNodeId) ||
+                    (linkSource === targetNodeId && linkTarget === sourceNodeId)) {
+                  return { ...link, weight };
+                }
+                return link;
+              })
+            }));
+            // Clear shortest path info when weight is modified
+            setShortestPathInfo(null);
+          } else {
+            alert('Please enter a valid weight between 1 and 10');
+          }
+        }
+      } else {
+        alert('No edge exists between these nodes');
+      }
+    }
+  }, [graphData.links]);
+
   return (
     <div style={{ width: '100vw', height: '100vh', background: '#1a1a1a' }}>
       <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 1 }}>
@@ -333,6 +378,20 @@ function App() {
           }}
         >
           Remove Edge
+        </button>
+        <button 
+          onClick={handleModifyWeight}
+          style={{
+            padding: '8px 16px',
+            marginRight: '10px',
+            background: '#ff9800',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer'
+          }}
+        >
+          Modify Weight
         </button>
         <button 
           onClick={handleFindPath}
