@@ -159,7 +159,7 @@ const generateInitialNodes = (): Node[] => {
 
 // Generate random weight
 const generateWeight = (): number => {
-  return Math.floor(Math.random() * 10) + 1;
+  return Math.floor(Math.random() * 30) + 1;
 };
 
 // Generate initial edges with more organic connections
@@ -320,10 +320,10 @@ function App() {
       });
 
       if (edge) {
-        const newWeight = prompt('Enter new weight (1-10):');
+        const newWeight = prompt('Enter new weight:');
         if (newWeight) {
           const weight = parseInt(newWeight);
-          if (!isNaN(weight) && weight >= 1 && weight <= 10) {
+          if (!isNaN(weight) && weight > 0) {
             setGraphData(prev => ({
               nodes: [...prev.nodes],
               links: prev.links.map(link => {
@@ -339,7 +339,7 @@ function App() {
             // Clear shortest path info when weight is modified
             setShortestPathInfo(null);
           } else {
-            alert('Please enter a valid weight between 1 and 10');
+            alert('Please enter edge weight');
           }
         }
       } else {
