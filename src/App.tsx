@@ -236,10 +236,44 @@ function App() {
   const [isSelectingNodes, setIsSelectingNodes] = React.useState(false);
   const [selectedNodes, setSelectedNodes] = React.useState<Set<string>>(new Set());
   const [newNodeId, setNewNodeId] = React.useState<string | null>(null);
+  const [isAddingEdge, setIsAddingEdge] = React.useState(false);
+  const [edgeSourceNode, setEdgeSourceNode] = React.useState<string | null>(null);
+  const [edgeTargetNode, setEdgeTargetNode] = React.useState<string | null>(null);
+  const [isRemovingEdge, setIsRemovingEdge] = React.useState(false);
+  const [removeSourceNode, setRemoveSourceNode] = React.useState<string | null>(null);
+  const [removeTargetNode, setRemoveTargetNode] = React.useState<string | null>(null);
+  const [isModifyingWeight, setIsModifyingWeight] = React.useState(false);
+  const [weightSourceNode, setWeightSourceNode] = React.useState<string | null>(null);
+  const [weightTargetNode, setWeightTargetNode] = React.useState<string | null>(null);
+  const [isFindingPath, setIsFindingPath] = React.useState(false);
+  const [pathSourceNode, setPathSourceNode] = React.useState<string | null>(null);
+  const [pathTargetNode, setPathTargetNode] = React.useState<string | null>(null);
+  const [newWeight, setNewWeight] = React.useState<string>('');
+  const [weightError, setWeightError] = React.useState<string>('');
+  const [newNodeHighlight, setNewNodeHighlight] = React.useState<string | null>(null);
+  const [newEdgeHighlight, setNewEdgeHighlight] = React.useState<Set<string>>(new Set());
+  const [edgeError, setEdgeError] = React.useState<string>('');
+  const [removeEdgeError, setRemoveEdgeError] = React.useState<string>('');
+  const [weightEdgeHighlight, setWeightEdgeHighlight] = React.useState<Set<string>>(new Set());
+  const [modifiedEdgeHighlight, setModifiedEdgeHighlight] = React.useState<Set<string>>(new Set());
 
   const handleAddNewNode = React.useCallback(() => {
-    // Clear shortest path info
+    // Clear all states
     setShortestPathInfo(null);
+    setIsAddingEdge(false);
+    setEdgeSourceNode(null);
+    setEdgeTargetNode(null);
+    setIsRemovingEdge(false);
+    setRemoveSourceNode(null);
+    setRemoveTargetNode(null);
+    setIsModifyingWeight(false);
+    setWeightSourceNode(null);
+    setWeightTargetNode(null);
+    setNewWeight('');
+    setWeightError('');
+    setIsFindingPath(false);
+    setPathSourceNode(null);
+    setPathTargetNode(null);
     
     // Find the next available node number
     const existingNodeNumbers = new Set(
@@ -267,12 +301,6 @@ function App() {
       fy: newY
     };
 
-    // Add node to graph
-    setGraphData(prev => ({
-      nodes: [...prev.nodes, newNode],
-      links: prev.links
-    }));
-
     // Start node selection mode
     setNewNodeId(newNode.id);
     setIsSelectingNodes(true);
@@ -290,8 +318,129 @@ function App() {
         }
         return newSelected;
       });
+    } else if (isAddingEdge) {
+      if (!edgeSourceNode) {
+        setEdgeSourceNode(node.id);
+        setEdgeError('');
+      } else if (node.id !== edgeSourceNode) {
+        // Check if edge already exists
+        const edgeExists = graphData.links.some(link => {
+          const linkSource = typeof link.source === 'object' ? link.source.id : link.source;
+          const linkTarget = typeof link.target === 'object' ? link.target.id : link.target;
+          return (linkSource === edgeSourceNode && linkTarget === node.id) ||
+                 (linkSource === node.id && linkTarget === edgeSourceNode);
+        });
+
+        if (edgeExists) {
+          setEdgeError('An edge already exists between these nodes');
+          return;
+        }
+
+        // Create the edge
+        const newEdge = { 
+          source: edgeSourceNode,
+          target: node.id,
+          weight: generateWeight() 
+        };
+
+        // Set highlight for the new edge
+        setNewEdgeHighlight(new Set([`${edgeSourceNode}-${node.id}`]));
+
+        // Update graph with new edge
+        setGraphData(prev => ({
+          nodes: [...prev.nodes],
+          links: [...prev.links, newEdge]
+        }));
+
+        // Keep menu visible but update target node
+        setEdgeTargetNode(node.id);
+        setEdgeError('');
+
+        // Clear highlight after 15 seconds
+        setTimeout(() => {
+          setNewEdgeHighlight(new Set());
+        }, 15000);
+      }
+    } else if (isRemovingEdge) {
+      if (!removeSourceNode) {
+        setRemoveSourceNode(node.id);
+        setRemoveEdgeError('');
+      } else if (node.id !== removeSourceNode) {
+        // Check if edge exists
+        const edgeExists = graphData.links.some(link => {
+          const linkSource = typeof link.source === 'object' ? link.source.id : link.source;
+          const linkTarget = typeof link.target === 'object' ? link.target.id : link.target;
+          return (linkSource === removeSourceNode && linkTarget === node.id) ||
+                 (linkSource === node.id && linkTarget === removeSourceNode);
+        });
+
+        if (!edgeExists) {
+          setRemoveEdgeError('No edge exists between these nodes');
+          return;
+        }
+
+        // Remove the edge
+        setGraphData(prev => ({
+          nodes: [...prev.nodes],
+          links: prev.links.filter(link => {
+            const linkSource = typeof link.source === 'object' ? link.source.id : link.source;
+            const linkTarget = typeof link.target === 'object' ? link.target.id : link.target;
+            return !((linkSource === removeSourceNode && linkTarget === node.id) ||
+                    (linkSource === node.id && linkTarget === removeSourceNode));
+          }),
+        }));
+        // Keep menu visible but update target node
+        setRemoveTargetNode(node.id);
+        setRemoveEdgeError('');
+      }
+    } else if (isModifyingWeight) {
+      if (!weightSourceNode) {
+        setWeightSourceNode(node.id);
+        setWeightError('');
+        setWeightEdgeHighlight(new Set());
+      } else if (node.id !== weightSourceNode) {
+        // Find the edge
+        const edge = graphData.links.find(link => {
+          const linkSource = typeof link.source === 'object' ? link.source.id : link.source;
+          const linkTarget = typeof link.target === 'object' ? link.target.id : link.target;
+          return (linkSource === weightSourceNode && linkTarget === node.id) ||
+                 (linkSource === node.id && linkTarget === weightSourceNode);
+        });
+
+        if (edge) {
+          setWeightTargetNode(node.id);
+          setNewWeight(edge.weight.toString());
+          setWeightError('');
+          // Set highlight for the selected edge
+          setWeightEdgeHighlight(new Set([`${weightSourceNode}-${node.id}`]));
+        } else {
+          setWeightError('No edge exists between these nodes');
+          setWeightEdgeHighlight(new Set());
+        }
+      }
+    } else if (isFindingPath) {
+      if (!pathSourceNode) {
+        setPathSourceNode(node.id);
+      } else if (node.id !== pathSourceNode) {
+        // Find shortest path
+        const result = findShortestPath(
+          graphData.nodes,
+          graphData.links,
+          pathSourceNode,
+          node.id
+        );
+
+        if (result) {
+          setShortestPathInfo(result);
+          // Keep menu visible but update target node
+          setPathTargetNode(node.id);
+        } else {
+          alert('No path exists between these nodes');
+        }
+      }
     }
-  }, [isSelectingNodes, newNodeId]);
+  }, [isSelectingNodes, newNodeId, isAddingEdge, edgeSourceNode, isRemovingEdge, removeSourceNode, 
+      isModifyingWeight, weightSourceNode, isFindingPath, pathSourceNode, graphData]);
 
   const handleDoneSelection = React.useCallback(() => {
     if (!newNodeId || selectedNodes.size === 0) {
@@ -302,6 +451,23 @@ function App() {
     // Clear shortest path info
     setShortestPathInfo(null);
 
+    // Generate position for new node
+    const centerX = 0;
+    const centerY = 0;
+    const angle = Math.random() * 2 * Math.PI;
+    const distance = 200 + Math.random() * 100;
+    const newX = centerX + distance * Math.cos(angle);
+    const newY = centerY + distance * Math.sin(angle);
+
+    // Create new node
+    const newNode: Node = {
+      id: newNodeId,
+      x: newX,
+      y: newY,
+      fx: newX,
+      fy: newY
+    };
+
     // Create edges with random weights
     const newEdges: Edge[] = Array.from(selectedNodes).map(targetId => ({
       source: newNodeId,
@@ -309,9 +475,17 @@ function App() {
       weight: generateWeight()
     }));
 
-    // Update graph with new edges
+    // Set highlight states before updating graph
+    setNewNodeHighlight(newNodeId);
+    setNewEdgeHighlight(new Set(newEdges.map(edge => {
+      const source = typeof edge.source === 'object' ? edge.source.id : edge.source;
+      const target = typeof edge.target === 'object' ? edge.target.id : edge.target;
+      return `${source}-${target}`;
+    })));
+
+    // Update graph with new node and edges
     setGraphData(prev => ({
-      nodes: prev.nodes,
+      nodes: [...prev.nodes, newNode],
       links: [...prev.links, ...newEdges]
     }));
 
@@ -319,142 +493,198 @@ function App() {
     setIsSelectingNodes(false);
     setSelectedNodes(new Set());
     setNewNodeId(null);
+
+    // Clear highlights after 3 seconds
+    setTimeout(() => {
+      setNewNodeHighlight(null);
+      setNewEdgeHighlight(new Set());
+    }, 15000);
   }, [newNodeId, selectedNodes]);
 
   const handleCancelSelection = React.useCallback(() => {
     // Clear shortest path info
     setShortestPathInfo(null);
     
-    if (newNodeId) {
-      // Remove the newly added node
-      setGraphData(prev => ({
-        nodes: prev.nodes.filter(node => node.id !== newNodeId),
-        links: prev.links
-      }));
-    }
+    // Reset selection mode without removing any node
     setIsSelectingNodes(false);
     setSelectedNodes(new Set());
     setNewNodeId(null);
+    setNewNodeHighlight(null);
+    setNewEdgeHighlight(new Set());
   }, [newNodeId]);
 
   const handleAddEdge = React.useCallback(() => {
-    // Clear shortest path info
+    // Clear all states
     setShortestPathInfo(null);
+    setIsSelectingNodes(false);
+    setSelectedNodes(new Set());
+    setNewNodeId(null);
+    setIsRemovingEdge(false);
+    setRemoveSourceNode(null);
+    setRemoveTargetNode(null);
+    setIsModifyingWeight(false);
+    setWeightSourceNode(null);
+    setWeightTargetNode(null);
+    setNewWeight('');
+    setWeightError('');
+    setIsFindingPath(false);
+    setPathSourceNode(null);
+    setPathTargetNode(null);
     
-    const sourceId = prompt('Enter source node number (1-50):');
-    const targetId = prompt('Enter target node number (1-50):');
+    // Start add edge mode
+    setIsAddingEdge(true);
+    setEdgeSourceNode(null);
+    setEdgeTargetNode(null);
+  }, []);
 
-    if (sourceId && targetId) {
-      const sourceNode = graphData.nodes.find(n => n.id === `node${sourceId}`);
-      const targetNode = graphData.nodes.find(n => n.id === `node${targetId}`);
-
-      if (sourceNode && targetNode) {
-        setGraphData(prev => ({
-          nodes: [...prev.nodes],
-          links: [...prev.links, { 
-            source: sourceNode,
-            target: targetNode,
-            weight: generateWeight() 
-          }],
-        }));
-      } else {
-        alert('Please enter valid node numbers between 1 and 50');
-      }
-    }
-  }, [graphData.nodes]);
+  const handleCancelAddEdge = React.useCallback(() => {
+    setIsAddingEdge(false);
+    setEdgeSourceNode(null);
+    setEdgeTargetNode(null);
+  }, []);
 
   const handleRemoveEdge = React.useCallback(() => {
-    // Clear shortest path info
+    // Clear all states
     setShortestPathInfo(null);
+    setIsSelectingNodes(false);
+    setSelectedNodes(new Set());
+    setNewNodeId(null);
+    setIsAddingEdge(false);
+    setEdgeSourceNode(null);
+    setEdgeTargetNode(null);
+    setIsModifyingWeight(false);
+    setWeightSourceNode(null);
+    setWeightTargetNode(null);
+    setNewWeight('');
+    setWeightError('');
+    setIsFindingPath(false);
+    setPathSourceNode(null);
+    setPathTargetNode(null);
     
-    const sourceId = prompt('Enter source node number (1-50):');
-    const targetId = prompt('Enter target node number (1-50):');
+    // Start remove edge mode
+    setIsRemovingEdge(true);
+    setRemoveSourceNode(null);
+    setRemoveTargetNode(null);
+  }, []);
 
-    if (sourceId && targetId) {
-      const sourceNodeId = `node${sourceId}`;
-      const targetNodeId = `node${targetId}`;
+  const handleCancelRemoveEdge = React.useCallback(() => {
+    setIsRemovingEdge(false);
+    setRemoveSourceNode(null);
+    setRemoveTargetNode(null);
+  }, []);
 
-      setGraphData(prev => ({
-        nodes: [...prev.nodes],
-        links: prev.links.filter(link => {
-          const linkSource = typeof link.source === 'object' ? link.source.id : link.source;
-          const linkTarget = typeof link.target === 'object' ? link.target.id : link.target;
-          // Check both directions since it's an undirected graph
-          return !((linkSource === sourceNodeId && linkTarget === targetNodeId) ||
-                  (linkSource === targetNodeId && linkTarget === sourceNodeId));
-        }),
-      }));
-    }
+  const handleModifyWeight = React.useCallback(() => {
+    // Clear all states
+    setShortestPathInfo(null);
+    setIsSelectingNodes(false);
+    setSelectedNodes(new Set());
+    setNewNodeId(null);
+    setIsAddingEdge(false);
+    setEdgeSourceNode(null);
+    setEdgeTargetNode(null);
+    setIsRemovingEdge(false);
+    setRemoveSourceNode(null);
+    setRemoveTargetNode(null);
+    setIsFindingPath(false);
+    setPathSourceNode(null);
+    setPathTargetNode(null);
+    
+    // Start modify weight mode
+    setIsModifyingWeight(true);
+    setWeightSourceNode(null);
+    setWeightTargetNode(null);
+    setNewWeight('');
+    setWeightError('');
   }, []);
 
   const handleFindPath = React.useCallback(() => {
-    const sourceId = prompt('Enter source node number (1-50):');
-    const targetId = prompt('Enter target node number (1-50):');
-
-    if (sourceId && targetId) {
-      const sourceNodeId = `node${sourceId}`;
-      const targetNodeId = `node${targetId}`;
-
-      const result = findShortestPath(
-        graphData.nodes,
-        graphData.links,
-        sourceNodeId,
-        targetNodeId
-      );
-
-      if (result) {
-        setShortestPathInfo(result);
-      } else {
-        alert('No path exists between these nodes');
-        setShortestPathInfo(null);
-      }
-    }
-  }, [graphData]);
-
-  const handleModifyWeight = React.useCallback(() => {
-    const sourceId = prompt('Enter source node number (1-50):');
-    const targetId = prompt('Enter target node number (1-50):');
+    // Clear all states
+    setShortestPathInfo(null);
+    setIsSelectingNodes(false);
+    setSelectedNodes(new Set());
+    setNewNodeId(null);
+    setIsAddingEdge(false);
+    setEdgeSourceNode(null);
+    setEdgeTargetNode(null);
+    setIsRemovingEdge(false);
+    setRemoveSourceNode(null);
+    setRemoveTargetNode(null);
+    setIsModifyingWeight(false);
+    setWeightSourceNode(null);
+    setWeightTargetNode(null);
+    setNewWeight('');
+    setWeightError('');
     
-    if (sourceId && targetId) {
-      const sourceNodeId = `node${sourceId}`;
-      const targetNodeId = `node${targetId}`;
-      
-      // Find the edge
-      const edge = graphData.links.find(link => {
-        const linkSource = typeof link.source === 'object' ? link.source.id : link.source;
-        const linkTarget = typeof link.target === 'object' ? link.target.id : link.target;
-        return (linkSource === sourceNodeId && linkTarget === targetNodeId) ||
-               (linkSource === targetNodeId && linkTarget === sourceNodeId);
-      });
+    // Start find path mode
+    setIsFindingPath(true);
+    setPathSourceNode(null);
+    setPathTargetNode(null);
+  }, []);
 
-      if (edge) {
-        const newWeight = prompt('Enter new weight:');
-        if (newWeight) {
-          const weight = parseInt(newWeight);
-          if (!isNaN(weight) && weight > 0) {
-            setGraphData(prev => ({
-              nodes: [...prev.nodes],
-              links: prev.links.map(link => {
-                const linkSource = typeof link.source === 'object' ? link.source.id : link.source;
-                const linkTarget = typeof link.target === 'object' ? link.target.id : link.target;
-                if ((linkSource === sourceNodeId && linkTarget === targetNodeId) ||
-                    (linkSource === targetNodeId && linkTarget === sourceNodeId)) {
-                  return { ...link, weight };
-                }
-                return link;
-              })
-            }));
-            // Clear shortest path info when weight is modified
-            setShortestPathInfo(null);
-          } else {
-            alert('Please enter edge weight');
-          }
-        }
-      } else {
-        alert('No edge exists between these nodes');
-      }
+  const handleWeightChange = React.useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    // Allow empty string for backspace/editing
+    if (value === '' || /^\d*$/.test(value)) {
+      setNewWeight(value);
+      setWeightError('');
     }
-  }, [graphData.links]);
+  }, []);
+
+  const handleWeightSubmit = React.useCallback(() => {
+    if (!newWeight) {
+      setWeightError('Please enter a weight');
+      return;
+    }
+
+    const weight = parseInt(newWeight);
+    if (!isNaN(weight) && weight > 0) {
+      // First update the graph
+      setGraphData(prev => ({
+        nodes: [...prev.nodes],
+        links: prev.links.map(link => {
+          const linkSource = typeof link.source === 'object' ? link.source.id : link.source;
+          const linkTarget = typeof link.target === 'object' ? link.target.id : link.target;
+          if ((linkSource === weightSourceNode && linkTarget === weightTargetNode) ||
+              (linkSource === weightTargetNode && linkTarget === weightSourceNode)) {
+            return { ...link, weight };
+          }
+          return link;
+        })
+      }));
+
+      // Then set the highlight
+      const edgeKey = `${weightSourceNode}-${weightTargetNode}`;
+      setModifiedEdgeHighlight(new Set([edgeKey]));
+      
+      // Clear the weight input and error
+      setNewWeight('');
+      setWeightError('');
+
+      // Clear highlight after 15 seconds
+      setTimeout(() => {
+        setModifiedEdgeHighlight(new Set());
+      }, 15000);
+    } else {
+      setWeightError('Please enter a valid positive number');
+    }
+  }, [newWeight, weightSourceNode, weightTargetNode]);
+
+  const handleCancelModifyWeight = React.useCallback(() => {
+    setIsModifyingWeight(false);
+    setWeightSourceNode(null);
+    setWeightTargetNode(null);
+    setNewWeight('');
+    setWeightError('');
+    setWeightEdgeHighlight(new Set());
+    setModifiedEdgeHighlight(new Set());
+  }, []);
+
+  const handleCancelFindPath = React.useCallback(() => {
+    setIsFindingPath(false);
+    setPathSourceNode(null);
+    setPathTargetNode(null);
+    setShortestPathInfo(null);
+  }, []);
 
   return (
     <div style={{ width: '100vw', height: '100vh', background: '#1a1a1a' }}>
@@ -580,6 +810,510 @@ function App() {
           </div>
         </div>
       )}
+      {isAddingEdge && (
+        <div style={{
+          position: 'absolute',
+          top: 60,
+          left: 10,
+          zIndex: 1,
+          background: 'rgba(0,0,0,0.9)',
+          padding: '20px',
+          borderRadius: '8px',
+          color: 'white',
+          maxWidth: '300px',
+          boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+          border: '1px solid rgba(255, 255, 255, 0.1)'
+        }}>
+          <h3 style={{ 
+            marginBottom: '15px', 
+            color: '#4CAF50',
+            fontSize: '18px',
+            fontWeight: 'bold',
+            borderBottom: '2px solid #4CAF50',
+            paddingBottom: '8px'
+          }}>
+            Add Edge
+          </h3>
+          <div style={{ marginBottom: '15px' }}>
+            {!edgeSourceNode ? (
+              <p style={{ 
+                marginBottom: '8px',
+                fontSize: '14px',
+                color: '#aaa'
+              }}>
+                Step 1: Select source node
+              </p>
+            ) : !edgeTargetNode ? (
+              <>
+                <p style={{ 
+                  marginBottom: '8px',
+                  fontSize: '14px',
+                  color: '#aaa'
+                }}>
+                  Step 2: Select target node
+                </p>
+                <div style={{
+                  background: 'rgba(76, 175, 80, 0.1)',
+                  padding: '10px',
+                  borderRadius: '4px',
+                  border: '1px solid rgba(76, 175, 80, 0.3)',
+                  marginBottom: '15px'
+                }}>
+                  <p style={{ 
+                    margin: 0, 
+                    color: '#4CAF50',
+                    fontSize: '14px',
+                    fontWeight: '500'
+                  }}>
+                    Source: Node {edgeSourceNode.replace('node', '')}
+                  </p>
+                </div>
+                {edgeError && (
+                  <p style={{
+                    color: '#f44336',
+                    fontSize: '14px',
+                    margin: '10px 0',
+                    padding: '8px',
+                    background: 'rgba(244, 67, 54, 0.1)',
+                    borderRadius: '4px',
+                    border: '1px solid rgba(244, 67, 54, 0.3)'
+                  }}>
+                    {edgeError}
+                  </p>
+                )}
+              </>
+            ) : (
+              <div style={{
+                background: 'rgba(76, 175, 80, 0.1)',
+                padding: '10px',
+                borderRadius: '4px',
+                border: '1px solid rgba(76, 175, 80, 0.3)',
+                marginBottom: '15px'
+              }}>
+                <p style={{ 
+                  margin: '0 0 8px 0', 
+                  color: '#4CAF50',
+                  fontSize: '14px',
+                  fontWeight: '500'
+                }}>
+                  Source: Node {edgeSourceNode.replace('node', '')}
+                </p>
+                <p style={{ 
+                  margin: 0, 
+                  color: '#4CAF50',
+                  fontSize: '14px',
+                  fontWeight: '500'
+                }}>
+                  Target: Node {edgeTargetNode.replace('node', '')}
+                </p>
+              </div>
+            )}
+          </div>
+          <button
+            onClick={handleCancelAddEdge}
+            style={{
+              padding: '8px 16px',
+              background: '#f44336',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: '500'
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+      {isRemovingEdge && (
+        <div style={{
+          position: 'absolute',
+          top: 60,
+          left: 10,
+          zIndex: 1,
+          background: 'rgba(0,0,0,0.9)',
+          padding: '20px',
+          borderRadius: '8px',
+          color: 'white',
+          maxWidth: '300px',
+          boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+          border: '1px solid rgba(255, 255, 255, 0.1)'
+        }}>
+          <h3 style={{ 
+            marginBottom: '15px', 
+            color: '#f44336',
+            fontSize: '18px',
+            fontWeight: 'bold',
+            borderBottom: '2px solid #f44336',
+            paddingBottom: '8px'
+          }}>
+            Remove Edge
+          </h3>
+          <div style={{ marginBottom: '15px' }}>
+            {!removeSourceNode ? (
+              <p style={{ 
+                marginBottom: '8px',
+                fontSize: '14px',
+                color: '#aaa'
+              }}>
+                Step 1: Select source node
+              </p>
+            ) : !removeTargetNode ? (
+              <>
+                <p style={{ 
+                  marginBottom: '8px',
+                  fontSize: '14px',
+                  color: '#aaa'
+                }}>
+                  Step 2: Select target node
+                </p>
+                <div style={{
+                  background: 'rgba(244, 67, 54, 0.1)',
+                  padding: '10px',
+                  borderRadius: '4px',
+                  border: '1px solid rgba(244, 67, 54, 0.3)',
+                  marginBottom: '15px'
+                }}>
+                  <p style={{ 
+                    margin: 0, 
+                    color: '#f44336',
+                    fontSize: '14px',
+                    fontWeight: '500'
+                  }}>
+                    Source: Node {removeSourceNode.replace('node', '')}
+                  </p>
+                </div>
+                {removeEdgeError && (
+                  <p style={{
+                    color: '#f44336',
+                    fontSize: '14px',
+                    margin: '10px 0',
+                    padding: '8px',
+                    background: 'rgba(244, 67, 54, 0.1)',
+                    borderRadius: '4px',
+                    border: '1px solid rgba(244, 67, 54, 0.3)'
+                  }}>
+                    {removeEdgeError}
+                  </p>
+                )}
+              </>
+            ) : (
+              <div style={{
+                background: 'rgba(244, 67, 54, 0.1)',
+                padding: '10px',
+                borderRadius: '4px',
+                border: '1px solid rgba(244, 67, 54, 0.3)',
+                marginBottom: '15px'
+              }}>
+                <p style={{ 
+                  margin: '0 0 8px 0', 
+                  color: '#f44336',
+                  fontSize: '14px',
+                  fontWeight: '500'
+                }}>
+                  Source: Node {removeSourceNode.replace('node', '')}
+                </p>
+                <p style={{ 
+                  margin: 0, 
+                  color: '#f44336',
+                  fontSize: '14px',
+                  fontWeight: '500'
+                }}>
+                  Target: Node {removeTargetNode.replace('node', '')}
+                </p>
+              </div>
+            )}
+          </div>
+          <button
+            onClick={handleCancelRemoveEdge}
+            style={{
+              padding: '8px 16px',
+              background: '#f44336',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: '500'
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+      {isModifyingWeight && (
+        <div style={{
+          position: 'absolute',
+          top: 60,
+          left: 10,
+          zIndex: 1,
+          background: 'rgba(0,0,0,0.9)',
+          padding: '20px',
+          borderRadius: '8px',
+          color: 'white',
+          maxWidth: '300px',
+          boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+          border: '1px solid rgba(255, 255, 255, 0.1)'
+        }}>
+          <h3 style={{ 
+            marginBottom: '15px', 
+            color: '#ff9800',
+            fontSize: '18px',
+            fontWeight: 'bold',
+            borderBottom: '2px solid #ff9800',
+            paddingBottom: '8px'
+          }}>
+            Modify Weight
+          </h3>
+          <div style={{ marginBottom: '15px' }}>
+            {!weightSourceNode ? (
+              <p style={{ 
+                marginBottom: '8px',
+                fontSize: '14px',
+                color: '#aaa'
+              }}>
+                Step 1: Select source node
+              </p>
+            ) : !weightTargetNode ? (
+              <>
+                <p style={{ 
+                  marginBottom: '8px',
+                  fontSize: '14px',
+                  color: '#aaa'
+                }}>
+                  Step 2: Select target node
+                </p>
+                <div style={{
+                  background: 'rgba(255, 152, 0, 0.1)',
+                  padding: '10px',
+                  borderRadius: '4px',
+                  border: '1px solid rgba(255, 152, 0, 0.3)',
+                  marginBottom: '15px'
+                }}>
+                  <p style={{ 
+                    margin: 0, 
+                    color: '#ff9800',
+                    fontSize: '14px',
+                    fontWeight: '500'
+                  }}>
+                    Source: Node {weightSourceNode.replace('node', '')}
+                  </p>
+                </div>
+                {weightError && (
+                  <p style={{
+                    color: '#f44336',
+                    fontSize: '14px',
+                    margin: '10px 0',
+                    padding: '8px',
+                    background: 'rgba(244, 67, 54, 0.1)',
+                    borderRadius: '4px',
+                    border: '1px solid rgba(244, 67, 54, 0.3)'
+                  }}>
+                    {weightError}
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <div style={{
+                  background: 'rgba(255, 152, 0, 0.1)',
+                  padding: '10px',
+                  borderRadius: '4px',
+                  border: '1px solid rgba(255, 152, 0, 0.3)',
+                  marginBottom: '15px'
+                }}>
+                  <p style={{ 
+                    margin: '0 0 8px 0', 
+                    color: '#ff9800',
+                    fontSize: '14px',
+                    fontWeight: '500'
+                  }}>
+                    Source: Node {weightSourceNode.replace('node', '')}
+                  </p>
+                  <p style={{ 
+                    margin: '0 0 15px 0', 
+                    color: '#ff9800',
+                    fontSize: '14px',
+                    fontWeight: '500'
+                  }}>
+                    Target: Node {weightTargetNode.replace('node', '')}
+                  </p>
+                  <div style={{ marginBottom: '10px' }}>
+                    <label style={{
+                      display: 'block',
+                      marginBottom: '5px',
+                      color: '#aaa',
+                      fontSize: '14px'
+                    }}>
+                      Enter new weight:
+                    </label>
+                    <input
+                      type="text"
+                      value={newWeight}
+                      onChange={handleWeightChange}
+                      style={{
+                        width: '100%',
+                        padding: '8px',
+                        borderRadius: '4px',
+                        border: weightError ? '1px solid #f44336' : '1px solid rgba(255, 152, 0, 0.3)',
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        color: 'white',
+                        fontSize: '14px'
+                      }}
+                      placeholder="Enter weight"
+                    />
+                    {weightError && (
+                      <p style={{
+                        color: '#f44336',
+                        fontSize: '12px',
+                        margin: '5px 0 0 0'
+                      }}>
+                        {weightError}
+                      </p>
+                    )}
+                    <button
+                      onClick={handleWeightSubmit}
+                      style={{
+                        width: '100%',
+                        padding: '8px 16px',
+                        background: '#ff9800',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        fontWeight: '500',
+                        marginTop: '10px'
+                      }}
+                    >
+                      Update Weight
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+          <button
+            onClick={handleCancelModifyWeight}
+            style={{
+              padding: '8px 16px',
+              background: '#f44336',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: '500'
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+      {isFindingPath && (
+        <div style={{
+          position: 'absolute',
+          top: 60,
+          left: 10,
+          zIndex: 1,
+          background: 'rgba(0,0,0,0.9)',
+          padding: '20px',
+          borderRadius: '8px',
+          color: 'white',
+          maxWidth: '300px',
+          boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+          border: '1px solid rgba(255, 255, 255, 0.1)'
+        }}>
+          <h3 style={{ 
+            marginBottom: '15px', 
+            color: '#2196F3',
+            fontSize: '18px',
+            fontWeight: 'bold',
+            borderBottom: '2px solid #2196F3',
+            paddingBottom: '8px'
+          }}>
+            Find Shortest Path
+          </h3>
+          <div style={{ marginBottom: '15px' }}>
+            {!pathSourceNode ? (
+              <p style={{ 
+                marginBottom: '8px',
+                fontSize: '14px',
+                color: '#aaa'
+              }}>
+                Step 1: Select source node
+              </p>
+            ) : !pathTargetNode ? (
+              <>
+                <p style={{ 
+                  marginBottom: '8px',
+                  fontSize: '14px',
+                  color: '#aaa'
+                }}>
+                  Step 2: Select target node
+                </p>
+                <div style={{
+                  background: 'rgba(33, 150, 243, 0.1)',
+                  padding: '10px',
+                  borderRadius: '4px',
+                  border: '1px solid rgba(33, 150, 243, 0.3)',
+                  marginBottom: '15px'
+                }}>
+                  <p style={{ 
+                    margin: 0, 
+                    color: '#2196F3',
+                    fontSize: '14px',
+                    fontWeight: '500'
+                  }}>
+                    Source: Node {pathSourceNode.replace('node', '')}
+                  </p>
+                </div>
+              </>
+            ) : (
+              <div style={{
+                background: 'rgba(33, 150, 243, 0.1)',
+                padding: '10px',
+                borderRadius: '4px',
+                border: '1px solid rgba(33, 150, 243, 0.3)',
+                marginBottom: '15px'
+              }}>
+                <p style={{ 
+                  margin: '0 0 8px 0', 
+                  color: '#2196F3',
+                  fontSize: '14px',
+                  fontWeight: '500'
+                }}>
+                  Source: Node {pathSourceNode.replace('node', '')}
+                </p>
+                <p style={{ 
+                  margin: 0, 
+                  color: '#2196F3',
+                  fontSize: '14px',
+                  fontWeight: '500'
+                }}>
+                  Target: Node {pathTargetNode.replace('node', '')}
+                </p>
+              </div>
+            )}
+          </div>
+          <button
+            onClick={handleCancelFindPath}
+            style={{
+              padding: '8px 16px',
+              background: '#f44336',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: '500'
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
       {shortestPathInfo && (
         <div 
           style={{ 
@@ -615,15 +1349,33 @@ function App() {
           if (node.id === newNodeId) {
             return '#9C27B0';
           }
+          if (isAddingEdge && node.id === edgeSourceNode) {
+            return '#4CAF50';
+          }
+          if (isRemovingEdge && node.id === removeSourceNode) {
+            return '#f44336';
+          }
+          if (isModifyingWeight && node.id === weightSourceNode) {
+            return '#ff9800';
+          }
+          if (isFindingPath && node.id === pathSourceNode) {
+            return '#2196F3';
+          }
+          if (newNodeHighlight === node.id) {
+            return '#9C27B0';
+          }
           return '#1f77b4';
         }}
         linkColor={(link) => {
+          const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+          const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+          const edgeKey = `${sourceId}-${targetId}`;
+          const reverseEdgeKey = `${targetId}-${sourceId}`;
+
           if (link === hoveredLink) {
             return '#ffd700';
           }
           if (shortestPathInfo) {
-            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
             const isInPath = shortestPathInfo.path.some((nodeId, index) => {
               const nextNodeId = shortestPathInfo.path[index + 1];
               return (nodeId === sourceId && nextNodeId === targetId) ||
@@ -631,22 +1383,43 @@ function App() {
             });
             return isInPath ? '#4CAF50' : '#555';
           }
+          if (newEdgeHighlight.has(edgeKey) || newEdgeHighlight.has(reverseEdgeKey)) {
+            return '#9C27B0';
+          }
+          if (modifiedEdgeHighlight.has(edgeKey) || modifiedEdgeHighlight.has(reverseEdgeKey)) {
+            return '#9C27B0';
+          }
+          if (weightEdgeHighlight.has(edgeKey) || weightEdgeHighlight.has(reverseEdgeKey)) {
+            return '#ff9800';
+          }
           return '#555';
         }}
         nodeRelSize={8}
         linkWidth={(link) => {
+          const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+          const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+          const edgeKey = `${sourceId}-${targetId}`;
+          const reverseEdgeKey = `${targetId}-${sourceId}`;
+
           if (link === hoveredLink) {
             return 3;
           }
           if (shortestPathInfo) {
-            const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-            const targetId = typeof link.target === 'object' ? link.target.id : link.target;
             const isInPath = shortestPathInfo.path.some((nodeId, index) => {
               const nextNodeId = shortestPathInfo.path[index + 1];
               return (nodeId === sourceId && nextNodeId === targetId) ||
                      (nodeId === targetId && nextNodeId === sourceId);
             });
             return isInPath ? 2 : 1;
+          }
+          if (newEdgeHighlight.has(edgeKey) || newEdgeHighlight.has(reverseEdgeKey)) {
+            return 3;
+          }
+          if (modifiedEdgeHighlight.has(edgeKey) || modifiedEdgeHighlight.has(reverseEdgeKey)) {
+            return 3;
+          }
+          if (weightEdgeHighlight.has(edgeKey) || weightEdgeHighlight.has(reverseEdgeKey)) {
+            return 3;
           }
           return 1;
         }}
@@ -656,24 +1429,25 @@ function App() {
           const label = node.id.replace('node', '');
           const fontSize = 14/globalScale;
           const isInPath = shortestPathInfo && shortestPathInfo.path.includes(node.id);
-          const nodeR = isInPath ? 12 : 10;
+          const isNewNode = newNodeHighlight === node.id;
+          const nodeR = isInPath || isNewNode ? 12 : 10;
 
-          // Draw outer glow for path nodes
-          if (isInPath) {
+          // Draw outer glow for path nodes or new nodes
+          if (isInPath || isNewNode) {
             ctx.beginPath();
             ctx.arc(node.x!, node.y!, nodeR + 4, 0, 2 * Math.PI);
-            ctx.fillStyle = 'rgba(33, 150, 243, 0.3)';
+            ctx.fillStyle = isInPath ? 'rgba(33, 150, 243, 0.3)' : 'rgba(156, 39, 176, 0.3)';
             ctx.fill();
           }
 
           // Draw circle
           ctx.beginPath();
           ctx.arc(node.x!, node.y!, nodeR, 0, 2 * Math.PI);
-          ctx.fillStyle = isInPath ? '#2196F3' : '#1f77b4';
+          ctx.fillStyle = isInPath ? '#2196F3' : (isNewNode ? '#9C27B0' : '#1f77b4');
           ctx.fill();
 
           // Draw text
-          ctx.font = `${isInPath ? 'bold ' : ''}${fontSize}px Sans-Serif`;
+          ctx.font = `${isInPath || isNewNode ? 'bold ' : ''}${fontSize}px Sans-Serif`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillStyle = 'white';
@@ -683,23 +1457,30 @@ function App() {
         linkCanvasObject={(link, ctx, globalScale) => {
           const start = link.source as Node;
           const end = link.target as Node;
+          const sourceId = start.id;
+          const targetId = end.id;
+          const edgeKey = `${sourceId}-${targetId}`;
+          const reverseEdgeKey = `${targetId}-${sourceId}`;
           
           const isHovered = link === hoveredLink;
+          const isNewEdge = newEdgeHighlight.has(edgeKey) || newEdgeHighlight.has(reverseEdgeKey);
+          const isModifiedEdge = modifiedEdgeHighlight.has(edgeKey) || modifiedEdgeHighlight.has(reverseEdgeKey);
           
           // Determine if this link is part of the shortest path
           const isInPath = shortestPathInfo && shortestPathInfo.path.some((nodeId, index) => {
             const nextNodeId = shortestPathInfo.path[index + 1];
-            return (nodeId === start.id && nextNodeId === end.id) ||
-                   (nodeId === end.id && nextNodeId === start.id);
+            return (nodeId === sourceId && nextNodeId === targetId) ||
+                   (nodeId === targetId && nextNodeId === sourceId);
           });
 
-          // Draw the line with glow effect for path or hover
-          if (isInPath || isHovered) {
+          // Draw the line with glow effect for path, hover, new edge, or modified edge
+          if (isInPath || isHovered || isNewEdge || isModifiedEdge) {
             // Draw glow
             ctx.beginPath();
             ctx.moveTo(start.x!, start.y!);
             ctx.lineTo(end.x!, end.y!);
-            ctx.strokeStyle = isHovered ? 'rgba(255, 215, 0, 0.15)' : 'rgba(76, 175, 80, 0.15)';
+            ctx.strokeStyle = isHovered ? 'rgba(255, 215, 0, 0.15)' : 
+                            (isNewEdge || isModifiedEdge ? 'rgba(156, 39, 176, 0.15)' : 'rgba(76, 175, 80, 0.15)');
             ctx.lineWidth = 6;
             ctx.stroke();
           }
@@ -708,8 +1489,9 @@ function App() {
           ctx.beginPath();
           ctx.moveTo(start.x!, start.y!);
           ctx.lineTo(end.x!, end.y!);
-          ctx.strokeStyle = isHovered ? '#ffd700' : (isInPath ? '#4CAF50' : '#555');
-          ctx.lineWidth = isHovered ? 3 : (isInPath ? 2 : 1);
+          ctx.strokeStyle = isHovered ? '#ffd700' : 
+                          (isNewEdge || isModifiedEdge ? '#9C27B0' : (isInPath ? '#4CAF50' : '#555'));
+          ctx.lineWidth = isHovered ? 3 : (isNewEdge || isModifiedEdge ? 3 : (isInPath ? 2 : 1));
           ctx.stroke();
 
           // Draw weight with background for better visibility (only if not hovered)
@@ -717,8 +1499,8 @@ function App() {
             const middleX = (start.x! + end.x!) / 2;
             const middleY = (start.y! + end.y!) / 2;
             const weight = (link as Edge).weight.toString();
-            const fontSize = isInPath ? 14/globalScale : 12/globalScale;
-            ctx.font = `${isInPath ? 'bold ' : ''}${fontSize}px Sans-Serif`;
+            const fontSize = isInPath || isNewEdge || isModifiedEdge ? 14/globalScale : 12/globalScale;
+            ctx.font = `${isInPath || isNewEdge || isModifiedEdge ? 'bold ' : ''}${fontSize}px Sans-Serif`;
             
             // Add background rectangle
             const textMetrics = ctx.measureText(weight);
@@ -732,7 +1514,7 @@ function App() {
             );
 
             // Draw weight text
-            ctx.fillStyle = isInPath ? '#4CAF50' : '#ffd700';
+            ctx.fillStyle = isInPath ? '#4CAF50' : (isNewEdge || isModifiedEdge ? '#9C27B0' : '#ffd700');
             ctx.fillText(weight, middleX, middleY);
           }
         }}
