@@ -229,13 +229,118 @@ function App() {
   });
 
   const [hoveredLink, setHoveredLink] = React.useState<Edge | null>(null);
-
   const [shortestPathInfo, setShortestPathInfo] = React.useState<{
     path: string[];
     totalWeight: number;
   } | null>(null);
+  const [isSelectingNodes, setIsSelectingNodes] = React.useState(false);
+  const [selectedNodes, setSelectedNodes] = React.useState<Set<string>>(new Set());
+  const [newNodeId, setNewNodeId] = React.useState<string | null>(null);
+
+  const handleAddNewNode = React.useCallback(() => {
+    // Clear shortest path info
+    setShortestPathInfo(null);
+    
+    // Find the next available node number
+    const existingNodeNumbers = new Set(
+      graphData.nodes.map(node => parseInt(node.id.replace('node', '')))
+    );
+    let nextNodeNumber = 1;
+    while (existingNodeNumbers.has(nextNodeNumber)) {
+      nextNodeNumber++;
+    }
+
+    // Generate position for new node
+    const centerX = 0;
+    const centerY = 0;
+    const angle = Math.random() * 2 * Math.PI;
+    const distance = 200 + Math.random() * 100;
+    const newX = centerX + distance * Math.cos(angle);
+    const newY = centerY + distance * Math.sin(angle);
+
+    // Create new node
+    const newNode: Node = {
+      id: `node${nextNodeNumber}`,
+      x: newX,
+      y: newY,
+      fx: newX,
+      fy: newY
+    };
+
+    // Add node to graph
+    setGraphData(prev => ({
+      nodes: [...prev.nodes, newNode],
+      links: prev.links
+    }));
+
+    // Start node selection mode
+    setNewNodeId(newNode.id);
+    setIsSelectingNodes(true);
+    setSelectedNodes(new Set());
+  }, [graphData.nodes]);
+
+  const handleNodeClick = React.useCallback((node: Node) => {
+    if (isSelectingNodes && newNodeId) {
+      setSelectedNodes(prev => {
+        const newSelected = new Set(prev);
+        if (newSelected.has(node.id)) {
+          newSelected.delete(node.id);
+        } else {
+          newSelected.add(node.id);
+        }
+        return newSelected;
+      });
+    }
+  }, [isSelectingNodes, newNodeId]);
+
+  const handleDoneSelection = React.useCallback(() => {
+    if (!newNodeId || selectedNodes.size === 0) {
+      alert('Please select at least one node to connect with');
+      return;
+    }
+
+    // Clear shortest path info
+    setShortestPathInfo(null);
+
+    // Create edges with random weights
+    const newEdges: Edge[] = Array.from(selectedNodes).map(targetId => ({
+      source: newNodeId,
+      target: targetId,
+      weight: generateWeight()
+    }));
+
+    // Update graph with new edges
+    setGraphData(prev => ({
+      nodes: prev.nodes,
+      links: [...prev.links, ...newEdges]
+    }));
+
+    // Reset selection mode
+    setIsSelectingNodes(false);
+    setSelectedNodes(new Set());
+    setNewNodeId(null);
+  }, [newNodeId, selectedNodes]);
+
+  const handleCancelSelection = React.useCallback(() => {
+    // Clear shortest path info
+    setShortestPathInfo(null);
+    
+    if (newNodeId) {
+      // Remove the newly added node
+      setGraphData(prev => ({
+        nodes: prev.nodes.filter(node => node.id !== newNodeId),
+        links: prev.links
+      }));
+    }
+    setIsSelectingNodes(false);
+    setSelectedNodes(new Set());
+    setNewNodeId(null);
+  }, [newNodeId]);
 
   const handleAddEdge = React.useCallback(() => {
+    // Clear shortest path info
+    setShortestPathInfo(null);
+    
     const sourceId = prompt('Enter source node number (1-50):');
     const targetId = prompt('Enter target node number (1-50):');
 
@@ -259,6 +364,9 @@ function App() {
   }, [graphData.nodes]);
 
   const handleRemoveEdge = React.useCallback(() => {
+    // Clear shortest path info
+    setShortestPathInfo(null);
+    
     const sourceId = prompt('Enter source node number (1-50):');
     const targetId = prompt('Enter target node number (1-50):');
 
@@ -352,6 +460,20 @@ function App() {
     <div style={{ width: '100vw', height: '100vh', background: '#1a1a1a' }}>
       <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 1 }}>
         <button 
+          onClick={handleAddNewNode}
+          style={{
+            padding: '8px 16px',
+            marginRight: '10px',
+            background: '#9C27B0',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer'
+          }}
+        >
+          Add New Node
+        </button>
+        <button 
           onClick={handleAddEdge}
           style={{
             padding: '8px 16px',
@@ -407,12 +529,63 @@ function App() {
           Find Shortest Path
         </button>
       </div>
+      {isSelectingNodes && (
+        <div style={{
+          position: 'absolute',
+          top: 60,
+          left: 10,
+          zIndex: 1,
+          background: 'rgba(0,0,0,0.8)',
+          padding: '15px',
+          borderRadius: '4px',
+          color: 'white',
+          maxWidth: '300px'
+        }}>
+          <h3 style={{ marginBottom: '10px', color: '#9C27B0' }}>
+            Select nodes to connect with Node {newNodeId?.replace('node', '')}
+          </h3>
+          <p style={{ marginBottom: '10px' }}>
+            Click on nodes to select/deselect them
+          </p>
+          <p style={{ marginBottom: '15px' }}>
+            Selected nodes: {Array.from(selectedNodes).map(id => id.replace('node', '')).join(', ')}
+          </p>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button
+              onClick={handleDoneSelection}
+              style={{
+                padding: '8px 16px',
+                background: '#4CAF50',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              Done
+            </button>
+            <button
+              onClick={handleCancelSelection}
+              style={{
+                padding: '8px 16px',
+                background: '#f44336',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
       {shortestPathInfo && (
         <div 
           style={{ 
             position: 'absolute', 
-            top: 60, 
-            left: 10, 
+            top: 10, 
+            right: 10, 
             zIndex: 1,
             background: 'rgba(0,0,0,0.8)',
             padding: '15px',
@@ -435,6 +608,12 @@ function App() {
         nodeColor={(node) => {
           if (shortestPathInfo && shortestPathInfo.path.includes(node.id)) {
             return '#2196F3';
+          }
+          if (isSelectingNodes && selectedNodes.has(node.id)) {
+            return '#4CAF50';
+          }
+          if (node.id === newNodeId) {
+            return '#9C27B0';
           }
           return '#1f77b4';
         }}
@@ -472,6 +651,7 @@ function App() {
           return 1;
         }}
         onLinkHover={setHoveredLink}
+        onNodeClick={handleNodeClick}
         nodeCanvasObject={(node, ctx, globalScale) => {
           const label = node.id.replace('node', '');
           const fontSize = 14/globalScale;
