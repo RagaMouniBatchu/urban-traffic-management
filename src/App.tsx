@@ -223,10 +223,64 @@ const generateInitialEdges = (nodes: Node[]): Edge[] => {
 
 function App() {
   const [graphData, setGraphData] = React.useState<GraphData>(() => {
+    // Try to load saved graph data from localStorage
+    const savedGraph = localStorage.getItem('savedGraph');
+    if (savedGraph) {
+      try {
+        const parsedGraph = JSON.parse(savedGraph);
+        // Ensure the data has the correct structure
+        if (parsedGraph.nodes && Array.isArray(parsedGraph.nodes) && 
+            parsedGraph.links && Array.isArray(parsedGraph.links)) {
+          return parsedGraph;
+        }
+      } catch (e) {
+        console.error('Error parsing saved graph:', e);
+      }
+    }
+    // If no saved data or invalid data, generate new graph
     const nodes = generateInitialNodes();
     const links = generateInitialEdges(nodes);
     return { nodes, links };
   });
+
+  // Add effect to save graph data whenever it changes
+  React.useEffect(() => {
+    localStorage.setItem('savedGraph', JSON.stringify(graphData));
+  }, [graphData]);
+
+  // Add function to reset graph to initial state
+  const handleResetGraph = React.useCallback(() => {
+    const nodes = generateInitialNodes();
+    const links = generateInitialEdges(nodes);
+    setGraphData({ nodes, links });
+    // Clear all other states
+    setShortestPathInfo(null);
+    setIsSelectingNodes(false);
+    setSelectedNodes(new Set());
+    setNewNodeId(null);
+    setIsAddingEdge(false);
+    setEdgeSourceNode(null);
+    setEdgeTargetNode(null);
+    setIsRemovingEdge(false);
+    setRemoveSourceNode(null);
+    setRemoveTargetNode(null);
+    setIsModifyingWeight(false);
+    setWeightSourceNode(null);
+    setWeightTargetNode(null);
+    setNewWeight('');
+    setWeightError('');
+    setIsFindingPath(false);
+    setPathSourceNode(null);
+    setPathTargetNode(null);
+    setPreviousPathNodes({ source: null, target: null });
+    setClickedEdge(null);
+    setNewNodeHighlight(null);
+    setNewEdgeHighlight(new Set());
+    setEdgeError('');
+    setRemoveEdgeError('');
+    setWeightEdgeHighlight(new Set());
+    setModifiedEdgeHighlight(new Set());
+  }, []);
 
   const [hoveredLink, setHoveredLink] = React.useState<Edge | null>(null);
   const [shortestPathInfo, setShortestPathInfo] = React.useState<{
@@ -256,6 +310,10 @@ function App() {
   const [removeEdgeError, setRemoveEdgeError] = React.useState<string>('');
   const [weightEdgeHighlight, setWeightEdgeHighlight] = React.useState<Set<string>>(new Set());
   const [modifiedEdgeHighlight, setModifiedEdgeHighlight] = React.useState<Set<string>>(new Set());
+  // Add new state for remembering previous path nodes
+  const [previousPathNodes, setPreviousPathNodes] = React.useState<{ source: string | null; target: string | null }>({ source: null, target: null });
+  // Add new state for edge click
+  const [clickedEdge, setClickedEdge] = React.useState<Edge | null>(null);
 
   const handleAddNewNode = React.useCallback(() => {
     // Clear all states
@@ -434,6 +492,8 @@ function App() {
           setShortestPathInfo(result);
           // Keep menu visible but update target node
           setPathTargetNode(node.id);
+          // Store the selected nodes for future use
+          setPreviousPathNodes({ source: pathSourceNode, target: node.id });
         } else {
           alert('No path exists between these nodes');
         }
@@ -560,6 +620,7 @@ function App() {
     setIsFindingPath(false);
     setPathSourceNode(null);
     setPathTargetNode(null);
+    setClickedEdge(null);
     
     // Start remove edge mode
     setIsRemovingEdge(true);
@@ -571,6 +632,7 @@ function App() {
     setIsRemovingEdge(false);
     setRemoveSourceNode(null);
     setRemoveTargetNode(null);
+    setClickedEdge(null);
   }, []);
 
   const handleModifyWeight = React.useCallback(() => {
@@ -588,6 +650,7 @@ function App() {
     setIsFindingPath(false);
     setPathSourceNode(null);
     setPathTargetNode(null);
+    setClickedEdge(null);
     
     // Start modify weight mode
     setIsModifyingWeight(true);
@@ -617,8 +680,36 @@ function App() {
     
     // Start find path mode
     setIsFindingPath(true);
+    
+    // If we have previous path nodes, use them
+    if (previousPathNodes.source && previousPathNodes.target) {
+      setPathSourceNode(previousPathNodes.source);
+      setPathTargetNode(previousPathNodes.target);
+      
+      // Recalculate shortest path with current graph
+      const result = findShortestPath(
+        graphData.nodes,
+        graphData.links,
+        previousPathNodes.source,
+        previousPathNodes.target
+      );
+      
+      if (result) {
+        setShortestPathInfo(result);
+      } else {
+        alert('No path exists between these nodes');
+      }
+    } else {
+      setPathSourceNode(null);
+      setPathTargetNode(null);
+    }
+  }, [graphData, previousPathNodes]);
+
+  const handleResetPathNodes = React.useCallback(() => {
+    setPreviousPathNodes({ source: null, target: null });
     setPathSourceNode(null);
     setPathTargetNode(null);
+    setShortestPathInfo(null);
   }, []);
 
   const handleWeightChange = React.useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -677,6 +768,7 @@ function App() {
     setWeightError('');
     setWeightEdgeHighlight(new Set());
     setModifiedEdgeHighlight(new Set());
+    setClickedEdge(null);
   }, []);
 
   const handleCancelFindPath = React.useCallback(() => {
@@ -685,6 +777,35 @@ function App() {
     setPathTargetNode(null);
     setShortestPathInfo(null);
   }, []);
+
+  const handleEdgeClick = React.useCallback((edge: Edge) => {
+    const sourceId = typeof edge.source === 'object' ? edge.source.id : edge.source;
+    const targetId = typeof edge.target === 'object' ? edge.target.id : edge.target;
+
+    if (isRemovingEdge) {
+      // Remove the edge
+      setGraphData(prev => ({
+        nodes: [...prev.nodes],
+        links: prev.links.filter(link => {
+          const linkSource = typeof link.source === 'object' ? link.source.id : link.source;
+          const linkTarget = typeof link.target === 'object' ? link.target.id : link.target;
+          return !((linkSource === sourceId && linkTarget === targetId) ||
+                  (linkSource === targetId && linkTarget === sourceId));
+        }),
+      }));
+      // Keep menu visible but update nodes
+      setRemoveSourceNode(sourceId);
+      setRemoveTargetNode(targetId);
+      setRemoveEdgeError('');
+    } else if (isModifyingWeight) {
+      setWeightSourceNode(sourceId);
+      setWeightTargetNode(targetId);
+      setNewWeight(edge.weight.toString());
+      setWeightError('');
+      // Set highlight for the selected edge
+      setWeightEdgeHighlight(new Set([`${sourceId}-${targetId}`]));
+    }
+  }, [isRemovingEdge, isModifyingWeight]);
 
   return (
     <div style={{ width: '100vw', height: '100vh', background: '#1a1a1a' }}>
@@ -749,6 +870,7 @@ function App() {
           onClick={handleFindPath}
           style={{
             padding: '8px 16px',
+            marginRight: '10px',
             background: '#2196F3',
             color: 'white',
             border: 'none',
@@ -757,6 +879,19 @@ function App() {
           }}
         >
           Find Shortest Path
+        </button>
+        <button 
+          onClick={handleResetGraph}
+          style={{
+            padding: '8px 16px',
+            background: '#607D8B',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer'
+          }}
+        >
+          Reset Graph
         </button>
       </div>
       {isSelectingNodes && (
@@ -951,6 +1086,13 @@ function App() {
             Remove Edge
           </h3>
           <div style={{ marginBottom: '15px' }}>
+            <p style={{ 
+              marginBottom: '8px',
+              fontSize: '14px',
+              color: '#aaa'
+            }}>
+              Click on an edge to select it, or select nodes manually
+            </p>
             {!removeSourceNode ? (
               <p style={{ 
                 marginBottom: '8px',
@@ -1067,6 +1209,13 @@ function App() {
             Modify Weight
           </h3>
           <div style={{ marginBottom: '15px' }}>
+            <p style={{ 
+              marginBottom: '8px',
+              fontSize: '14px',
+              color: '#aaa'
+            }}>
+              Click on an edge to select it, or select nodes manually
+            </p>
             {!weightSourceNode ? (
               <p style={{ 
                 marginBottom: '8px',
@@ -1297,21 +1446,38 @@ function App() {
               </div>
             )}
           </div>
-          <button
-            onClick={handleCancelFindPath}
-            style={{
-              padding: '8px 16px',
-              background: '#f44336',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: '500'
-            }}
-          >
-            Cancel
-          </button>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button
+              onClick={handleCancelFindPath}
+              style={{
+                padding: '8px 16px',
+                background: '#f44336',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '500'
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleResetPathNodes}
+              style={{
+                padding: '8px 16px',
+                background: '#ff9800',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: '500'
+              }}
+            >
+              Reset Nodes
+            </button>
+          </div>
         </div>
       )}
       {shortestPathInfo && (
@@ -1340,7 +1506,12 @@ function App() {
         nodeLabel="id"
         linkLabel={(link) => `Weight: ${(link as Edge).weight}`}
         nodeColor={(node) => {
-          if (shortestPathInfo && shortestPathInfo.path.includes(node.id)) {
+          // Check if node is in the current or previous shortest path
+          const isInPath = shortestPathInfo && shortestPathInfo.path.includes(node.id);
+          const isInPreviousPath = previousPathNodes.source && previousPathNodes.target && 
+            findShortestPath(graphData.nodes, graphData.links, previousPathNodes.source, previousPathNodes.target)?.path.includes(node.id);
+
+          if (isInPath || isInPreviousPath) {
             return '#2196F3';
           }
           if (isSelectingNodes && selectedNodes.has(node.id)) {
@@ -1375,13 +1546,25 @@ function App() {
           if (link === hoveredLink) {
             return '#ffd700';
           }
-          if (shortestPathInfo) {
-            const isInPath = shortestPathInfo.path.some((nodeId, index) => {
-              const nextNodeId = shortestPathInfo.path[index + 1];
-              return (nodeId === sourceId && nextNodeId === targetId) ||
-                     (nodeId === targetId && nextNodeId === sourceId);
-            });
-            return isInPath ? '#4CAF50' : '#555';
+
+          // Check if link is in the current or previous shortest path
+          const isInPath = shortestPathInfo && shortestPathInfo.path.some((nodeId, index) => {
+            const nextNodeId = shortestPathInfo.path[index + 1];
+            return (nodeId === sourceId && nextNodeId === targetId) ||
+                   (nodeId === targetId && nextNodeId === sourceId);
+          });
+
+          const previousPath = previousPathNodes.source && previousPathNodes.target ? 
+            findShortestPath(graphData.nodes, graphData.links, previousPathNodes.source, previousPathNodes.target) : null;
+          
+          const isInPreviousPath = previousPath?.path.some((nodeId, index) => {
+            const nextNodeId = previousPath.path[index + 1];
+            return (nodeId === sourceId && nextNodeId === targetId) ||
+                   (nodeId === targetId && nextNodeId === sourceId);
+          });
+
+          if (isInPath || isInPreviousPath) {
+            return '#4CAF50';
           }
           if (newEdgeHighlight.has(edgeKey) || newEdgeHighlight.has(reverseEdgeKey)) {
             return '#9C27B0';
@@ -1394,7 +1577,6 @@ function App() {
           }
           return '#555';
         }}
-        nodeRelSize={8}
         linkWidth={(link) => {
           const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
           const targetId = typeof link.target === 'object' ? link.target.id : link.target;
@@ -1404,13 +1586,25 @@ function App() {
           if (link === hoveredLink) {
             return 3;
           }
-          if (shortestPathInfo) {
-            const isInPath = shortestPathInfo.path.some((nodeId, index) => {
-              const nextNodeId = shortestPathInfo.path[index + 1];
-              return (nodeId === sourceId && nextNodeId === targetId) ||
-                     (nodeId === targetId && nextNodeId === sourceId);
-            });
-            return isInPath ? 2 : 1;
+
+          // Check if link is in the current or previous shortest path
+          const isInPath = shortestPathInfo && shortestPathInfo.path.some((nodeId, index) => {
+            const nextNodeId = shortestPathInfo.path[index + 1];
+            return (nodeId === sourceId && nextNodeId === targetId) ||
+                   (nodeId === targetId && nextNodeId === sourceId);
+          });
+
+          const previousPath = previousPathNodes.source && previousPathNodes.target ? 
+            findShortestPath(graphData.nodes, graphData.links, previousPathNodes.source, previousPathNodes.target) : null;
+          
+          const isInPreviousPath = previousPath?.path.some((nodeId, index) => {
+            const nextNodeId = previousPath.path[index + 1];
+            return (nodeId === sourceId && nextNodeId === targetId) ||
+                   (nodeId === targetId && nextNodeId === sourceId);
+          });
+
+          if (isInPath || isInPreviousPath) {
+            return 2;
           }
           if (newEdgeHighlight.has(edgeKey) || newEdgeHighlight.has(reverseEdgeKey)) {
             return 3;
@@ -1425,6 +1619,8 @@ function App() {
         }}
         onLinkHover={setHoveredLink}
         onNodeClick={handleNodeClick}
+        onLinkClick={handleEdgeClick}
+        nodeRelSize={8}
         nodeCanvasObject={(node, ctx, globalScale) => {
           const label = node.id.replace('node', '');
           const fontSize = 14/globalScale;
